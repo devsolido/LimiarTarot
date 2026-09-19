@@ -1,11 +1,11 @@
 import { AiInterpretationSchema, InterpretationRequestSchema, interpretationJsonSchema } from "@/lib/interpretation-schema";
 import { getCard, getSpreadForReading, meaningFor, themeLabels } from "@/lib/tarot";
-import { DEFAULT_OLLAMA_MODEL, isSupportedOllamaModel } from "@/lib/ollama-models";
+import { DEFAULT_DEEPSEEK_MODEL, isSupportedDeepSeekModel } from "@/lib/deepseek-models";
 import type { InterpretationRequest } from "@/lib/interpretation-schema";
-import type { OllamaModelId } from "@/lib/ollama-models";
+import type { DeepSeekModelId } from "@/lib/deepseek-models";
 import type { AiInterpretation, InterpretationErrorCode, InterpretationSuccess } from "@/types/interpretation";
 
-export const OLLAMA_MODEL = DEFAULT_OLLAMA_MODEL;
+export const DEEPSEEK_MODEL = DEFAULT_DEEPSEEK_MODEL;
 
 export class InterpretationServiceError extends Error {
   constructor(public code: InterpretationErrorCode, message: string, public status: number) {
@@ -148,17 +148,19 @@ export function validateInterpretationAgainstContext(result: AiInterpretation, c
 
 type FetchLike = typeof fetch;
 
-export async function generateOllamaInterpretation(
+export async function generateDeepSeekInterpretation(
   value: unknown,
-  options: { fetchImpl?: FetchLike; signal?: AbortSignal; baseUrl?: string; timeoutMs?: number; model?: OllamaModelId } = {},
+  options: { fetchImpl?: FetchLike; signal?: AbortSignal; baseUrl?: string; timeoutMs?: number; model?: DeepSeekModelId } = {},
 ): Promise<InterpretationSuccess> {
   const context = buildCanonicalInterpretationContext(value);
   const request = InterpretationRequestSchema.parse(value);
-  const configuredModel = isSupportedOllamaModel(process.env.OLLAMA_MODEL) ? process.env.OLLAMA_MODEL : DEFAULT_OLLAMA_MODEL;
+  const configuredModel = isSupportedDeepSeekModel(process.env.DEEPSEEK_MODEL) ? process.env.DEEPSEEK_MODEL : DEFAULT_DEEPSEEK_MODEL;
   const model = options.model ?? request.model ?? configuredModel;
   const fetchImpl = options.fetchImpl ?? fetch;
-  const baseUrl = (options.baseUrl ?? process.env.OLLAMA_BASE_URL ?? "http://127.0.0.1:11434").replace(/\/$/, "");
-  const timeoutMs = options.timeoutMs ?? Number(process.env.OLLAMA_TIMEOUT_MS || context.cards.length * 300000);
+  const baseUrl = (options.baseUrl ?? process.env.DEEPSEEK_BASE_URL ?? "https://api.deepseek.com").replace(/\/$/, "");
+  const timeoutMs = options.timeoutMs ?? Number(process.env.DEEPSEEK_TIMEOUT_MS || context.cards.length * 300000);
+  const apiKey = process.env.DEEPSEEK_API_KEY;
+  if (!apiKey) throw new InterpretationServiceError("DEEPSEEK_UNAVAILABLE", "A chave da DeepSeek não foi configurada no servidor.", 503);
   const controller = new AbortController();
   let timedOut = false;
   const timeout = setTimeout(() => { timedOut = true; controller.abort(); }, timeoutMs);
@@ -167,70 +169,46 @@ export async function generateOllamaInterpretation(
   const startedAt = Date.now();
 
   try {
-    let tagsResponse: Response;
-    try {
-      tagsResponse = await fetchImpl(`${baseUrl}/api/tags`, { cache: "no-store", signal: controller.signal });
-    } catch (error) {
-      if (controller.signal.aborted) throw error;
-      throw new InterpretationServiceError("OLLAMA_UNAVAILABLE", "O Ollama local não está respondendo. Confirme se o aplicativo está aberto.", 503);
-    }
-    if (!tagsResponse.ok) throw new InterpretationServiceError("OLLAMA_UNAVAILABLE", "Não foi possível consultar os modelos do Ollama local.", 503);
-    const tags = await tagsResponse.json() as { models?: Array<{ name?: string; model?: string }> };
-    const installed = tags.models?.some((item) => item.name === model || item.model === model);
-    if (!installed) {
-      throw new InterpretationServiceError("MODEL_NOT_INSTALLED", `O modelo ${model} ainda não está instalado.`, 503);
-    }
-
-    const response = await fetchImpl(`${baseUrl}/api/chat`, {
+    const response = await fetchImpl(`${baseUrl}/chat/completions`, {
       method: "POST",
       cache: "no-store",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
       signal: controller.signal,
       body: JSON.stringify({
         model,
         messages: buildInterpretationMessages(context),
         stream: false,
-        think: false,
-        keep_alive: "10m",
-        format: interpretationJsonSchema,
-        options: {
-          num_ctx: 16384,
-          temperature: 0.2,
-          top_p: 0.85,
-          repeat_penalty: 1.1,
-          num_predict: context.cards.length > 3 ? 4096 : 2048,
-        },
+        response_format: { type: "json_object" },
+        temperature: 0.2,
+        max_tokens: context.cards.length > 3 ? 4096 : 2048,
       }),
     });
     if (!response.ok) {
       const body = await response.text();
-      if (response.status === 404 || /model.*not found|pull model/i.test(body)) {
-        throw new InterpretationServiceError("MODEL_NOT_INSTALLED", `O modelo ${model} ainda não está instalado.`, 503);
+      if (response.status === 401 || response.status === 403) {
+        throw new InterpretationServiceError("DEEPSEEK_UNAVAILABLE", "A chave da DeepSeek foi rejeitada. Verifique a configuração do servidor.", 503);
       }
-      console.error(`[ollama] /api/chat respondeu ${response.status}: ${body.slice(0, 800)}`);
-      if (/memory|memória|allocate|cuda|vram/i.test(body)) {
-        throw new InterpretationServiceError("OLLAMA_UNAVAILABLE", "O Ollama não encontrou memória suficiente para processar esta leitura.", 503);
-      }
-      throw new InterpretationServiceError("OLLAMA_UNAVAILABLE", "O Ollama não conseguiu processar esta leitura.", 503);
+      console.error(`[deepseek] /chat/completions respondeu ${response.status}: ${body.slice(0, 800)}`);
+      throw new InterpretationServiceError("DEEPSEEK_UNAVAILABLE", "A DeepSeek não conseguiu processar esta leitura.", 503);
     }
 
-    const payload = await response.json() as { message?: { content?: string }; total_duration?: number };
+    const payload = await response.json() as { choices?: Array<{ message?: { content?: string } }> };
     let content: unknown;
     try {
-      content = JSON.parse(payload.message?.content || "");
+      content = JSON.parse(payload.choices?.[0]?.message?.content || "");
     } catch {
       throw new InterpretationServiceError("INVALID_RESPONSE", "O modelo devolveu uma resposta que não pôde ser validada.", 502);
     }
     const parsed = AiInterpretationSchema.safeParse(content);
     if (!parsed.success) {
-      console.error("[ollama] resposta fora do contrato:", JSON.stringify(parsed.error.issues), JSON.stringify(content).slice(0, 1200));
+      console.error("[deepseek] resposta fora do contrato:", JSON.stringify(parsed.error.issues), JSON.stringify(content).slice(0, 1200));
       throw new InterpretationServiceError("INVALID_RESPONSE", "O modelo devolveu uma estrutura incompleta.", 502);
     }
     validateInterpretationAgainstContext(parsed.data, context);
     return {
       ok: true,
       model,
-      durationMs: payload.total_duration ? Math.round(payload.total_duration / 1_000_000) : Date.now() - startedAt,
+      durationMs: Date.now() - startedAt,
       interpretation: parsed.data,
     };
   } catch (error) {
@@ -239,7 +217,7 @@ export async function generateOllamaInterpretation(
       if (timedOut) throw new InterpretationServiceError("TIMEOUT", "A interpretação excedeu o limite de tempo estipulado.", 504);
       throw new InterpretationServiceError("CANCELLED", "A interpretação foi cancelada.", 499);
     }
-    throw new InterpretationServiceError("OLLAMA_UNAVAILABLE", "Não foi possível acessar o Ollama local.", 503);
+    throw new InterpretationServiceError("DEEPSEEK_UNAVAILABLE", "Não foi possível acessar a DeepSeek.", 503);
   } finally {
     clearTimeout(timeout);
     options.signal?.removeEventListener("abort", cancel);

@@ -2,8 +2,8 @@
 
 import Link from "next/link";
 import { Brain, Play, RefreshCw } from "lucide-react";
-import type { OllamaModelId } from "@/lib/ollama-models";
-import type { OllamaModelsResponse } from "@/types/interpretation";
+import type { DeepSeekModelId } from "@/lib/deepseek-models";
+import type { DeepSeekModelsResponse } from "@/types/interpretation";
 
 export function OllamaModelSelector({
   catalog,
@@ -21,7 +21,7 @@ export function OllamaModelSelector({
   onRefresh: () => void;
 }) {
   const selected = catalog?.models.find((model) => model.id === selectedModel);
-  const installedCount = catalog?.models.filter((model) => model.installed).length ?? 0;
+  const selected = catalog?.models.find((model) => model.id === selectedModel);
 
   return (
     <section className="ollama-model-panel" aria-labelledby="ollama-model-title">
@@ -69,6 +69,72 @@ export function OllamaModelSelector({
           <span>{selected.family} · perfil {selected.tier} · contexto {selected.context} · arquivo {selected.size}</span>
           <p>{selected.recommendation}</p>
           {!selected.installed && <p className="ollama-install-hint">Para instalar, execute <code>ollama pull {selected.id}</code> ou abra <code>ABRIR_LIMIAR_TARO.bat --ollama-only</code>.</p>}
+        </div>
+      )}
+    </section>
+  );
+}
+}
+export function OllamaModelSelector({
+  catalog,
+  selectedModel,
+  busy,
+  onSelect,
+  onGenerate,
+  onRefresh,
+}: {
+  catalog?: DeepSeekModelsResponse;
+  selectedModel: DeepSeekModelId;
+  busy: boolean;
+  onSelect: (model: DeepSeekModelId) => void;
+  onGenerate: () => void;
+  onRefresh: () => void;
+}) {
+  const selected = catalog?.models.find((model) => model.id === selectedModel);
+
+  return (
+    <section className="ollama-model-panel" aria-labelledby="deepseek-model-title">
+      <div className="ollama-model-heading">
+        <div>
+          <span className="eyebrow"><Brain size={14} /> IA online</span>
+          <h2 id="deepseek-model-title">Escolha o modelo DeepSeek</h2>
+          <p>A interpretação é processada online. A chave da API fica protegida no servidor.</p>
+        </div>
+        <span className={`ollama-status ${catalog?.available ? "online" : "offline"}`}>
+          {catalog ? (catalog.available ? "DeepSeek disponível" : "DeepSeek não configurada") : "Consultando DeepSeek…"}
+        </span>
+      </div>
+
+      <div className="ollama-model-controls">
+        <label>
+          Modelo
+          <select
+            className="select"
+            value={selectedModel}
+            disabled={!catalog || busy}
+            onChange={(event) => onSelect(event.target.value as DeepSeekModelId)}
+          >
+            {(catalog?.models ?? []).map((model) => (
+              <option value={model.id} key={model.id}>{model.label} · {model.profile}</option>
+            ))}
+          </select>
+        </label>
+        <div className="button-row ollama-model-actions">
+          <button className="button primary" type="button" disabled={busy || !catalog?.available} onClick={onGenerate}>
+            <Play size={16} /> {busy ? "Interpretando…" : "Usar este modelo"}
+          </button>
+          <button className="button ghost" type="button" disabled={busy} onClick={onRefresh}>
+            <RefreshCw size={16} /> Atualizar
+          </button>
+          <Link className="button ghost" href="/modelos">Configurar IA</Link>
+        </div>
+      </div>
+
+      {selected && (
+        <div className="ollama-model-detail">
+          <strong>{selected.label}</strong>
+          <span>{selected.profile} · contexto {selected.context}</span>
+          <p>{selected.recommendation}</p>
         </div>
       )}
     </section>

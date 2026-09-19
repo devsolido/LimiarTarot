@@ -58,25 +58,22 @@ export function OllamaModelManager() {
   const [feedback, setFeedback] = useState("");
   const installController = useRef<AbortController | null>(null);
 
-  const loadModels = useCallback(async () => {
-    try {
-      const response = await fetch("/api/interpretations", { cache: "no-store" });
-      const payload = await response.json() as OllamaModelsResponse;
-      if (!response.ok || !payload.ok || !Array.isArray(payload.models)) {
-        throw new Error("Catálogo de modelos inválido.");
+    const loadModels = useCallback(async () => {
+      try {
+        const response = await fetch("/api/interpretations", { cache: "no-store" });
+        const payload = await response.json() as DeepSeekModelsResponse;
+        if (!response.ok || !payload.ok || !Array.isArray(payload.models)) throw new Error("Catálogo de modelos inválido.");
+        let saved: unknown;
+        try { saved = window.localStorage.getItem(DEEPSEEK_MODEL_STORAGE_KEY); } catch { saved = null; }
+        const next = isSupportedDeepSeekModel(saved) && payload.models.some((model) => model.id === saved)
+          ? saved
+          : payload.defaultModel;
+        setCatalog(payload);
+        setSelectedModel(next);
+      } catch {
+        setFeedback("Não foi possível consultar a configuração da DeepSeek.");
       }
-
-      const saved = readSavedModel();
-      const installedModels = payload.models.filter((model) => model.installed);
-      const nextModel = payload.models.find((model) => model.id === saved && model.installed)?.id
-        ?? payload.models.find((model) => model.id === payload.defaultModel && model.installed)?.id
-        ?? installedModels[0]?.id
-        ?? payload.defaultModel;
-
-      setCatalog(payload);
-      setSelectedModel(nextModel);
-    } catch {
-      setFeedback("Não foi possível consultar o Ollama neste computador.");
+    }, []);
     }
   }, []);
 

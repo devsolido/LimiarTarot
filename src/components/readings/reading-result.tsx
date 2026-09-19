@@ -22,30 +22,30 @@ import type {
 import type { ReadingSession, TarotSpread } from "@/types/tarot";
 import { feedbackVariants, listItemVariants, reducedVariants, stageVariants } from "@/lib/motion";
 import { useHydratedReducedMotion } from "@/hooks/use-hydrated-reduced-motion";
-import { DEFAULT_OLLAMA_MODEL, isSupportedOllamaModel, OLLAMA_MODEL_STORAGE_KEY, ollamaModelLabel } from "@/lib/ollama-models";
-import type { OllamaModelId } from "@/lib/ollama-models";
-import type { OllamaModelsResponse } from "@/types/interpretation";
+import { DEFAULT_DEEPSEEK_MODEL, DEEPSEEK_MODEL_STORAGE_KEY, deepSeekModelLabel, isSupportedDeepSeekModel } from "@/lib/deepseek-models";
+import type { DeepSeekModelId } from "@/lib/deepseek-models";
+import type { DeepSeekModelsResponse } from "@/types/interpretation";
 
 type AiState =
   | { status: "idle" }
-  | { status: "loading"; model: OllamaModelId }
-  | { status: "success"; result: AiInterpretation; durationMs: number; model: OllamaModelId }
+  | { status: "loading"; model: DeepSeekModelId }
+  | { status: "success"; result: AiInterpretation; durationMs: number; model: DeepSeekModelId }
   | { status: "fallback"; code: InterpretationErrorCode; message: string };
 
 const errorCopy: Record<InterpretationErrorCode, string> = {
-  OLLAMA_UNAVAILABLE: "O Ollama local não está respondendo. Confirme se o aplicativo está aberto e tente novamente.",
-  MODEL_NOT_INSTALLED: "O modelo escolhido não foi encontrado neste computador.",
+  DEEPSEEK_UNAVAILABLE: "A DeepSeek não está disponível. Verifique a chave da API e tente novamente.",
+  MODEL_NOT_AVAILABLE: "O modelo escolhido não está disponível na DeepSeek.",
   TIMEOUT: "A interpretação ultrapassou o limite de tempo estipulado. A leitura básica continua disponível.",
   INVALID_RESPONSE: "A resposta do modelo não passou pela validação das cartas e posições.",
   INVALID_READING: "Esta sessão não possui os dados canônicos necessários para uma interpretação por IA.",
   CANCELLED: "A interpretação foi cancelada. Você pode continuar com a leitura básica ou tentar novamente.",
 };
 
-function timingKey(cardCount: number, model: OllamaModelId) {
+function timingKey(cardCount: number, model: DeepSeekModelId) {
   return `limiar:llm-timing:v2:${model}:${cardCount}`;
 }
 
-function loadEstimate(cardCount: number, model: OllamaModelId) {
+function loadEstimate(cardCount: number, model: DeepSeekModelId) {
   const fallback = initialInterpretationEstimate(cardCount);
   try {
     const stored = Number(window.localStorage.getItem(timingKey(cardCount, model)));
@@ -144,8 +144,8 @@ export function ReadingResult({ id }: { id: string }) {
   const reduceMotion = useHydratedReducedMotion();
   const [session, setSession] = useState<ReadingSession | null | undefined>(undefined);
   const [aiState, setAiState] = useState<AiState>({ status: "idle" });
-  const [modelCatalog, setModelCatalog] = useState<OllamaModelsResponse>();
-  const [selectedModel, setSelectedModel] = useState<OllamaModelId>(DEFAULT_OLLAMA_MODEL);
+  const [modelCatalog, setModelCatalog] = useState<DeepSeekModelsResponse>();
+  const [selectedModel, setSelectedModel] = useState<DeepSeekModelId>(DEFAULT_DEEPSEEK_MODEL);
   const [modelChoiceRequired, setModelChoiceRequired] = useState(false);
   const [estimateSeconds, setEstimateSeconds] = useState(60);
   const [feedback, setFeedback] = useState("");
@@ -169,23 +169,21 @@ export function ReadingResult({ id }: { id: string }) {
   const refreshModels = useCallback(async () => {
     try {
       const response = await fetch("/api/interpretations", { cache: "no-store" });
-      const catalog = await response.json() as OllamaModelsResponse;
-      if (!catalog.ok || !Array.isArray(catalog.models) || !isSupportedOllamaModel(catalog.defaultModel)) {
+      const catalog = await response.json() as DeepSeekModelsResponse;
+      if (!catalog.ok || !Array.isArray(catalog.models) || !isSupportedDeepSeekModel(catalog.defaultModel)) {
         throw new Error("Catálogo de modelos inválido.");
       }
       setModelCatalog(catalog);
       let stored: unknown;
-      try { stored = window.localStorage.getItem(OLLAMA_MODEL_STORAGE_KEY); } catch { stored = null; }
-      const storedInstalled = isSupportedOllamaModel(stored) && catalog.models.some((model) => model.id === stored && model.installed);
-      const installedModels = catalog.models.filter((model) => model.installed);
-      const preferred = storedInstalled ? stored : catalog.defaultModel;
-      const next = catalog.models.find((model) => model.id === preferred && model.installed)?.id
-        ?? installedModels[0]?.id
-        ?? preferred;
-      setModelChoiceRequired(installedModels.length > 1 && !storedInstalled);
+      try { stored = window.localStorage.getItem(DEEPSEEK_MODEL_STORAGE_KEY); } catch { stored = null; }
+      const savedModel = isSupportedDeepSeekModel(stored) && catalog.models.some((model) => model.id === stored && model.available)
+        ? stored
+        : catalog.defaultModel;
+      const next = catalog.models.find((model) => model.id === savedModel)?.id ?? catalog.defaultModel;
+      setModelChoiceRequired(false);
       setSelectedModel(next);
     } catch {
-      setFeedback("Não foi possível consultar os modelos do Ollama.");
+      setFeedback("Não foi possível consultar os modelos da DeepSeek.");
     }
   }, []);
 
@@ -194,7 +192,7 @@ export function ReadingResult({ id }: { id: string }) {
     return () => window.clearTimeout(timer);
   }, [refreshModels]);
 
-  const requestInterpretation = useCallback(async (currentSession: ReadingSession, currentSpread: TarotSpread, model: OllamaModelId) => {
+  const requestInterpretation = useCallback(async (currentSession: ReadingSession, currentSpread: TarotSpread, model: DeepSeekModelId) => {
     controllerRef.current?.abort();
     const controller = new AbortController();
     controllerRef.current = controller;
@@ -241,8 +239,8 @@ export function ReadingResult({ id }: { id: string }) {
     if (startedForSession.current === session.id) return;
     startedForSession.current = session.id;
     const selected = modelCatalog.models.find((model) => model.id === selectedModel);
-    if (modelCatalog.available && !selected?.installed) {
-      const timer = window.setTimeout(() => setAiState({ status: "fallback", code: "MODEL_NOT_INSTALLED", message: errorCopy.MODEL_NOT_INSTALLED }), 0);
+    if (!selected?.available) {
+      const timer = window.setTimeout(() => setAiState({ status: "fallback", code: "MODEL_NOT_AVAILABLE", message: errorCopy.MODEL_NOT_AVAILABLE }), 0);
       return () => window.clearTimeout(timer);
     }
     const timer = window.setTimeout(() => { void requestInterpretation(session, spread, selectedModel); }, 0);
@@ -252,11 +250,11 @@ export function ReadingResult({ id }: { id: string }) {
     };
   }, [modelCatalog, modelChoiceRequired, requestInterpretation, selectedModel, session, spread]);
 
-  const selectModel = (model: OllamaModelId) => {
+  const selectModel = (model: DeepSeekModelId) => {
     setSelectedModel(model);
     setModelChoiceRequired(false);
     setFeedback("");
-    try { window.localStorage.setItem(OLLAMA_MODEL_STORAGE_KEY, model); } catch { /* preferência opcional */ }
+    try { window.localStorage.setItem(DEEPSEEK_MODEL_STORAGE_KEY, model); } catch { /* preferência opcional */ }
   };
 
   const generateWithSelectedModel = () => {
@@ -272,7 +270,7 @@ export function ReadingResult({ id }: { id: string }) {
 
   const modelPanel = <OllamaModelSelector catalog={modelCatalog} selectedModel={selectedModel} busy={aiState.status === "loading"} onSelect={selectModel} onGenerate={generateWithSelectedModel} onRefresh={refreshModels} />;
 
-  if (aiState.status === "loading") return <div className="result-layout">{modelPanel}<InterpretationLoading session={session} spread={spread} modelLabel={ollamaModelLabel(aiState.model)} estimateSeconds={estimateSeconds} onCancel={() => controllerRef.current?.abort()} /></div>;
+  if (aiState.status === "loading") return <div className="result-layout">{modelPanel}<InterpretationLoading session={session} spread={spread} modelLabel={deepSeekModelLabel(aiState.model)} estimateSeconds={estimateSeconds} onCancel={() => controllerRef.current?.abort()} /></div>;
 
   const aiResult = aiState.status === "success" ? aiState.result : undefined;
   const isSimpleAnswer = aiResult?.questionAnalysis.complexity === "simple";
@@ -313,7 +311,7 @@ export function ReadingResult({ id }: { id: string }) {
       {aiState.status === "fallback" && (
         <motion.section className="ai-error" role="alert" variants={reduceMotion ? reducedVariants : feedbackVariants} initial="hidden" animate="visible" exit="exit">
           <TriangleAlert size={26} />
-          <div><span className="eyebrow">Leitura básica ativada</span><h2>A interpretação local não foi concluída</h2><p>{errorCopy[aiState.code] || aiState.message}</p>{aiState.code === "MODEL_NOT_INSTALLED" && <p>Instale no terminal com <code>ollama pull {selectedModel}</code>.</p>}<button className="button" type="button" onClick={retry}><RefreshCw size={16} /> Tentar interpretação por IA novamente</button></div>
+          <div><span className="eyebrow">Leitura básica ativada</span><h2>A interpretação online não foi concluída</h2><p>{errorCopy[aiState.code] || aiState.message}</p><button className="button" type="button" onClick={retry}><RefreshCw size={16} /> Tentar interpretação por IA novamente</button></div>
         </motion.section>
       )}
       </AnimatePresence>
@@ -323,7 +321,7 @@ export function ReadingResult({ id }: { id: string }) {
       <AnimatePresence initial={false}>
       {aiResult && (
         <motion.section className="ai-result-intro" variants={reduceMotion ? reducedVariants : stageVariants} initial="hidden" animate="visible" exit="exit">
-          <span className="eyebrow"><Brain size={14} /> Interpretação complementar · {aiState.status === "success" ? ollamaModelLabel(aiState.model) : "IA local"}</span>
+          <span className="eyebrow"><Brain size={14} /> Interpretação complementar · {aiState.status === "success" ? deepSeekModelLabel(aiState.model) : "IA online"}</span>
           <h2>Resposta à sua pergunta</h2>
           <p className="direct-answer">{aiResult.directAnswer}</p>
           <p className="answer-synthesis">{aiResult.synthesis}</p>

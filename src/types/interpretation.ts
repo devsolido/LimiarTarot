@@ -1,8 +1,8 @@
-import type { OllamaModelDefinition, OllamaModelId } from "@/lib/ollama-models";
+import type { DeepSeekModelDefinition, DeepSeekModelId } from "@/lib/deepseek-models";
 
 export type InterpretationErrorCode =
-  | "OLLAMA_UNAVAILABLE"
-  | "MODEL_NOT_INSTALLED"
+  | "DEEPSEEK_UNAVAILABLE"
+  | "MODEL_NOT_AVAILABLE"
   | "TIMEOUT"
   | "INVALID_RESPONSE"
   | "INVALID_READING"
@@ -37,7 +37,7 @@ export interface AiInterpretation {
 
 export interface InterpretationSuccess {
   ok: true;
-  model: OllamaModelId;
+  model: DeepSeekModelId;
   durationMs: number;
   interpretation: AiInterpretation;
 }
@@ -52,14 +52,14 @@ export interface InterpretationFailure {
 
 export type InterpretationResponse = InterpretationSuccess | InterpretationFailure;
 
-export interface OllamaModelStatus extends OllamaModelDefinition {
-  installed: boolean;
+export interface DeepSeekModelStatus extends DeepSeekModelDefinition {
+  available: boolean;
 }
 
-export interface OllamaModelsResponse {
+export interface DeepSeekModelsResponse {
   ok: true;
   available: boolean;
-  defaultModel: OllamaModelId;
-  models: OllamaModelStatus[];
+  defaultModel: DeepSeekModelId;
+  models: DeepSeekModelStatus[];
   message?: string;
 }
