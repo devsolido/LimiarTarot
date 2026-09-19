@@ -14,12 +14,12 @@ import {
   getSpreadForReading,
   isCustomSpread,
   normalizeSearch,
-  saveSession,
   suitLabels,
   tarotCards,
   themeLabels,
 } from "@/lib/tarot";
 import { clearDraft, readDraft, writeDraft } from "@/lib/reading-draft";
+import { saveSession } from "@/lib/reading-history";
 import type { ReadingStage as Stage } from "@/lib/reading-draft";
 import type { ArcanaType, ReadingSession, TarotSpread, TarotSuit, TarotTheme } from "@/types/tarot";
 import { reducedVariants, stageVariants } from "@/lib/motion";

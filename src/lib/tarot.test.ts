@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { assignCardsToPositions, buildSummary, filterCards, getSpreadForReading, migrateSession, normalizeSearch, spreadCardCountLabel, tarotCards, tarotSpreads } from "./tarot";
+import { assignCardsToPositions, buildSummary, filterCards, getSpreadForReading, normalizeSearch, spreadCardCountLabel, tarotCards, tarotSpreads } from "./tarot";
+import { migrateSession } from "./reading-history";
 import type { CardFilters } from "@/types/tarot";
 
 const filters: CardFilters = { query: "", arcanaTypes: [], suits: [], elements: [], ranks: [], numbers: [], theme: "general", sort: "deck" };

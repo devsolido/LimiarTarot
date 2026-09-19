@@ -12,7 +12,8 @@ import {
   initialInterpretationEstimate,
   updateInterpretationEstimate,
 } from "@/lib/interpretation-timing";
-import { getCard, getSpreadForReading, meaningFor, readHistory, themeLabels } from "@/lib/tarot";
+import { getCard, getSpreadForReading, meaningFor, themeLabels } from "@/lib/tarot";
+import { readHistory } from "@/lib/reading-history";
 import type {
   AiInterpretation,
   InterpretationErrorCode,

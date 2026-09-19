@@ -204,7 +204,7 @@ Nunca versione `.env.local` ou credenciais. O `.gitignore` mantém apenas `.env.
 ## Estrutura do projeto
 
 ```text
-Infografico-Tarot/
+LimiarTarot/
 ├── public/cards/                 # Imagens e miniaturas das 78 cartas
 ├── scripts/
 │   ├── prepare_content.py        # Extração do PDF e preparo dos assets
@@ -215,7 +215,10 @@ Infografico-Tarot/
 │   ├── components/               # UI, animações, biblioteca e tiragens
 │   ├── data/                     # Cartas, guia, tiragens e licenças em JSON
 │   ├── hooks/                    # Hooks reutilizáveis
-│   ├── lib/                      # Regras de domínio, persistência e Ollama
+│   ├── lib/                      # Regras de domínio e integrações
+│   │   ├── tarot.ts              # Catálogo, filtros e regras das tiragens
+│   │   ├── reading-history.ts    # Persistência e migração do histórico local
+│   │   └── ollama-*.ts           # Integração e catálogo de modelos locais
 │   └── types/                    # Contratos TypeScript
 ├── tests/e2e/                    # Cenários Playwright
 ├── .env.example                  # Exemplo de configuração
